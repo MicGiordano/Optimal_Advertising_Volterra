@@ -13,3 +13,4 @@ Where W(r) is a standard Brownian motion on [0,T], a, b and s, are positive cons
 
 Here H is the Hurst index, and we know that for -1/2 < H < 1/2 the model is mean reverting to the mean reversion level MRL.
 
+The script for the computation of the optimal u is still a work in progress and will be updated soon. 
