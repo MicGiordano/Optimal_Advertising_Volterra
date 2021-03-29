@@ -169,6 +169,20 @@ def approximated_hurst(H,T,n):
 
 
 def Monomial_Coefficients(L,C):
+    """
+    Given the matrix L and the coefficients C, computes the Vector of the monomial coefficients
+    for the Legendre polynomials
+
+    Parameters
+    ----------
+    L : Shifted Legendre polynomial matrix.
+    C : Legendre coefficients for the approximant of t^H.
+
+    Returns
+    -------
+    V : Monomial coefficients for the approximant of t^H
+
+    """
     V=np.zeros(len(L))
     
     for i in range(len(L)):
@@ -209,18 +223,33 @@ def Compute_gammas(n,b,L,C):
         
     return Gamma
 
-def OptimalU(b,H,T,t):
+def OptimalU(a,b,s,H,T,t,Error=0.5):
     """
-    Computes the optimal advertising effort U
+    Computes the optimal advertising effort U at point t\in[0,T]. In order to do so we start by 
+    computing the optimal advertising effort for an approximated problem with kernel K_e given
+    by the Legendre polynomial approximation of K. 
+    
+    Parameters:
+    -------
+    a,b,s,H,T : Parameters of the Volterra-OU process
+    t         : Point at which computin the optimal advertising effort
+    Error     : Approximation error for the kernel K_e
+    
+    Output:
+    ---------
+    
+    U(t)     : Optimal advertising effort at point U(t), t\in [0,T]
 
     """
+    
+
     n=1
-    while approximated_hurst(H,T,n)>0.5:
+    while approximated_hurst(H,T,n)>Error:         # Finding an optimal number of Legendre poly that allows to get below the approximation error choosen by the user
         n=n+1
     C=Legendre_approximation_coefficients(H, T, n)
     L=Shifted_Legendre(T, n)
     
-    Kappa=Monomial_Coefficients(L, C)
+    Kappa=Monomial_Coefficients(L, C) 
     
     Gammas=np.zeros((n+1,n+1))
     for i in range(0,n+1):
@@ -233,33 +262,36 @@ def OptimalU(b,H,T,t):
         
     S=np.matmul(Gammas,Times)
     
-    return np.matmul(Kappa,S)[0]
+    return (np.matmul(Kappa,S)[0]**2)*((1/4)*(a/s)**2)
 
 
-def Volterra(X_0,a,b,s,H,U=None,N=999,m=1,T=10,Compare=False):
+def Volterra(X_0,a,b,s,H,U=None,N=999,m=1,T=10,Compare=False,Error=0.5):
     """
     Generates the Volterra process
     X(t)=X_0+\int_0^t (t-r)^H (a*U(r)-b*X(r))dr+s*\int_0^t (t-r)^H dW(r)
-    for t \in [0,T]
+    for t \in [0,T].
     
-    Arguments
+    
+    Parameters
     ---------
-        X_0         is the initial Value
-        a>=0        is the advertising effort parameter
-        b>=0        is the memory deterioration in absence of advertising parameter
-        H           is the Hurst index to be choosen in (0,1/2)
-        U           is the advertising strategy. If U is missing the program tries 
-                    to use the strategy U(t)=t for t in [2,6] and 0 elsewhere. 
-                    If U=optimal, the optimal advertising strategy is computed and
-                    the program uses this strategy. Notice that U should be a (N,1)
-                    dimensional vector
-        N           Is the number of steps that the program has to compute, by
-                    default it is set to N=999
-        m           is the number of paths to simulate, by default m=1
-        T           is the upper bound of the time interval
-        Compare     is a boolean parameter that is used to decide whether to compute
-                    the path with a=0 in addition to the one with a passed by the user.
-                    
+        X_0   :      Is the initial Value
+        a>=0  :      Is the advertising effort parameter
+        b>=0  :      Is the memory deterioration in absence of advertising parameter
+        H     :      Is the Hurst index to be choosen in (0,1/2)
+        U     :      Is the advertising strategy. If U is missing the program tries 
+                     to use the strategy U(t)=t for t in [2,6] and 0 elsewhere. 
+                     If U=optimal, the optimal advertising strategy is computed and
+                     the program uses this strategy. Notice that U should be a (N,1)
+                     dimensional vector
+        N     :      Is the number of steps that the program has to compute, by
+                     default it is set to N=999
+        m     :      Is the number of paths to simulate, by default m=1
+        T     :      Is the upper bound of the time interval
+        Compare:     Is a boolean parameter that is used to decide whether to compute
+                     the path with a=0 in addition to the one with a passed by the user.
+        Error:       Is the approximation error allowed when computing the approximant polynomial kernel
+                     This is used in computing the optimal advertising effort U
+        
     Outputs
     --------
     If Compare=True, Volterra generates as outputs V_a,V_0,t, where t is a vector of size N+1
@@ -283,7 +315,10 @@ def Volterra(X_0,a,b,s,H,U=None,N=999,m=1,T=10,Compare=False):
     
     t = np.linspace(0, N*dt, N+1)
         
-    if U is None:
+    if U is None:           #If no U is used the default vector is a zeroes vector
+        U=np.zeros((1,N))
+        
+    elif U == 'test':      #If 'test' is chosen, and N is large enough, a test vector is choosen for U
         if N>600:
             U=np.zeros((1,N))
             for i in range(200,600):
@@ -291,12 +326,11 @@ def Volterra(X_0,a,b,s,H,U=None,N=999,m=1,T=10,Compare=False):
         else:
             U=np.zeros((1,N))
             
-    elif U=='optimal':  
+    elif U=='optimal':     #If 'optimal' is passed as an argument, the program computes the optimal vector U 
         U=np.zeros((1,N))
         for i in range(0,N):
-            U[0,i]=OptimalU(b,H,T,t[i])
-    #If 'optimal' is passed as an argument, the program computes the optimal vector U 
-        
+            U[0,i]=OptimalU(a,b,s,H,T,t[i],Error)
+   
     
     #Initialize some empty vectors used in the for cycles
     S1=np.zeros((m,N)) 
@@ -330,10 +364,12 @@ def Volterra(X_0,a,b,s,H,U=None,N=999,m=1,T=10,Compare=False):
             V_0[k]=V_0[k,0]+P2[k]+Noise[k]     
         
         
-        plt.plot(t[0:N],V_a[0,:])
-        plt.plot(t[0:N],V_0[0,:])
-        plt.plot(t[0:N],U[0,:])
-            
+        plt.plot(t[0:N],V_a[0,:],label='X(t), a=1')
+        plt.plot(t[0:N],V_0[0,:],label='X(t), a=0')
+        plt.plot(t[0:N],U[0,:],label='u(t)')
+        plt.legend(loc="upper right")
+        plt.show()
+                
         return V_a,V_0,t,U
     
     else:                   #Compute the Volterra process only with 'a' selected by the user
