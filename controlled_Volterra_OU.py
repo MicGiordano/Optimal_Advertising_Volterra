@@ -4,6 +4,8 @@ import numpy as np
 import scipy.special as sy
 import scipy as sp
 import matplotlib.pyplot as plt
+from r8_choose import r8_choose
+from r8_mop import r8_mop
 
 
 def brownian(x0, n, dt, delta, out=None):
@@ -70,73 +72,8 @@ def brownian(x0, n, dt, delta, out=None):
 
     return out
 
-def Shifted_Legendre(T,n):
-    """
-    Computes the n-th order shifted Legendre polynomials on the interval [0,T]
-    
-    Parameters
-    ----------
-    T : Interval size.
-    n : Order of the Legendre Polynomial.
 
-    Returns
-    -------
-    L : Legendre polynomials matrix.
-
-    """
-    L=np.zeros((n+1,n+1))
-    Q=np.zeros((n+1,n+1))
-    for j in range (0,n+1):
-        for i in range (0,n+1):
-            if i>=j:
-                L[i,j]=((-1)**(i+j))*((sy.factorial(i+j))/(sy.factorial(i-j)*((sy.factorial(j))**2)))
-    for i in range(0,n+1):
-        Q[i,i]=T**(-i)
-    return np.matmul(L,Q)
-
-
-def polyL_i(L,i,T):
-    return lambda x: sum(f(x) for f in [lambda x, j=j: L[i,j]*(x**(j)) for j in range(0,i+1)])
-    #Defines the i-th Legendre poly
-    
-def polyL_i_squared(L,i,T):
-    return lambda x: sum(f(x) for f in [lambda x, j=j: L[i,j]*(x**(j)) for j in range(0,i+1)])**2
-    #Defines the norm of the i-th Legendre poly
-    
-def integrand(L,i,H,T):
-    return lambda x: sum(f(x) for f in [lambda x, j=j: L[i,j]*(x**(j+H)) for j in range(0,i+1)])
-    #Defines the integarnd given by the i-th legendre poly times x^H
-        
-
-def Legendre_approximation_coefficients(H,T,n):
-    
-    """
-    Computes the n-th shifted Legendre polynomials approximation coefficients of the deterministic 
-    function t^H on the interval [0,T]
-    Parameters
-    ----------
-    H : Hurst index in (0,1/2).
-    T : Time orizon .
-    n : Order of the Legendre Polynomial .
-
-    Returns
-    -------
-    C : Coefficient vector
-
-    """
-    
-    C=np.zeros((1,n+1))
-    
-    
-    L=Shifted_Legendre(T, n)
-      
-    for i in range(0,n+1):
-        C[0,i]=sp.integrate.quad( integrand(L,i,H,T) , 0, T, points=(0))[0]*(sp.integrate.quad(polyL_i_squared(L, i, T),0,T)[0])**(-1)
-        
-    return C
-
-
-def approximated_hurst(H,T,n):
+def approximated_hurst_bernstein(T,H,n):
     """
     Parameters
     ----------
@@ -146,84 +83,88 @@ def approximated_hurst(H,T,n):
 
     Returns
     -------
-    C : Coefficients of the Legendre polynomials approximation.
+    C : Coefficients of the Bernstein polynomials approximation.
 
     """
-    
-    C=np.transpose(Legendre_approximation_coefficients(H,T, n))
-    L=Shifted_Legendre(T, n)
     t=np.linspace(0,T,1000)
-    A=np.zeros((1000,1000))
-    K_e=np.zeros((1,1000))
     K=np.zeros((1,1000))
     K[0,:]=t**H
-    for i in range(0,n):
-        A[i,:]=polyL_i(L,i,T)(t)*C[i]
-        K_e[0,:]=K_e[0,:]+A[i,:]
-        
-    # plt.plot(t,K_e[0,:]-K[0,:])
+    A=np.zeros((1,n+1))
+    K_e=np.zeros((1,1000))
+    for j in range (len(t)):
+        for i in range(0,n+1):
+            A[0,i]=(((i*T)/n)**H)*r8_choose(n,i)*(t[j]**i)*(T-t[j])**(n-i)
+            K_e[0,j]=K_e[0,j]+(1/(T**n))*A[0,i] 
+            
+    
     # plt.plot(t,K[0,:])
     # plt.plot(t,K_e[0,:])
+    # plt.plot(t,K_e[0,:]-K[0,:])
     
-    return np.linalg.norm(K_e[0,:]-K[0,:])
+    return np.linalg.norm(K[0,:]-K_e[0,:],ord=np.inf)
 
 
-def Monomial_Coefficients(L,C):
+
+
+def Monomial_Coefficients_Bernstein(T,H,n):
+    
     """
     Given the matrix L and the coefficients C, computes the Vector of the monomial coefficients
     for the Legendre polynomials
 
     Parameters
     ----------
-    L : Shifted Legendre polynomial matrix.
-    C : Legendre coefficients for the approximant of t^H.
+    H : Hurst index.
+    T : Time interval.
+    n : Number of iterations .
 
     Returns
     -------
     V : Monomial coefficients for the approximant of t^H
 
     """
-    V=np.zeros(len(L))
-    
-    for i in range(len(L)):
-         for j in range(len(L)):
-             V[i]=V[i]+L[j,i]*C[0,j]
-            
+    V=np.zeros((1,n+1))
+    A=np.zeros((1,n+1))
+    for k in range(0,n+1):
+        for i in range (0,k+1):
+            A[0,i]=((-1)**(k-i))*(((i*T)/n)**H)*r8_choose(n,i)*r8_choose(n-i,k-i)
+            V[0,k]=V[0,k]+((1/T)**k)*A[0,i]    
     return V
 
 
-def Compute_gammas(n,b,L,C):
+
+def Compute_Gammas_Bernstein(b,T,H,m,V):
     """
     Computes the real numbers "gamma_i^k" needed for computing explicitly the optimal vector U.
     
     Parameters
     ----------
-    n : Number of iterations. Must be equal to the number of coefficients computed by the
-        Legendre_approximation_coefficients function.
+    m : Order of truncation for infinite series
     b : Drift in the Volterra process.
-    C : Vector of the coefficients computed via the Legendre_approximation_coefficients.
+    T : Time horizon
+    H : Hurst index
 
     Returns
     -------
     Gamma : Elements in the optimal vector U.
-
     """
-    V=Monomial_Coefficients(L, C)
     
-    if n == 0:
+    if m == 0:
         Gamma=np.array([1])
         
     else:
         S=0
-        G=Compute_gammas(n-1,b,L,C)
+        G=Compute_Gammas_Bernstein(b,T,H,m-1,V)
         
-        for i in range(len(G)):
-            S=S+(-b)*G[i]*sy.factorial(i)*V[i]
-        Gamma=np.append(S,Compute_gammas(n-1,b,L,C))
+        for i in range(min(len(G)-1,len(V[0])-1)+1):
+            S=S+(-b)*G[i]*sy.factorial(i)*V[0,i]
+            
+        Gamma=np.append(S,G)
+        
         
     return Gamma
 
-def OptimalU(a,b,s,H,T,t,Error=0.5):
+def OptimalU(a,b,s,H,T,t,m,Error=0.5):
     """
     Computes the optimal advertising effort U at point t\in[0,T]. In order to do so we start by 
     computing the optimal advertising effort for an approximated problem with kernel K_e given
@@ -233,6 +174,7 @@ def OptimalU(a,b,s,H,T,t,Error=0.5):
     -------
     a,b,s,H,T : Parameters of the Volterra-OU process
     t         : Point at which computin the optimal advertising effort
+    m         : Order of approximation for the truncation of an infinite sum
     Error     : Approximation error for the kernel K_e
     
     Output:
@@ -244,28 +186,34 @@ def OptimalU(a,b,s,H,T,t,Error=0.5):
     
 
     n=1
-    while approximated_hurst(H,T,n)>Error:         # Finding an optimal number of Legendre poly that allows to get below the approximation error choosen by the user
+    
+    while approximated_hurst_bernstein(T,H,n)>Error:         # Finding an optimal number of Legendre poly that allows to get below the approximation error choosen by the user
         n=n+1
-    C=Legendre_approximation_coefficients(H, T, n)
-    L=Shifted_Legendre(T, n)
     
-    Kappa=Monomial_Coefficients(L, C) 
+    Kappa=Monomial_Coefficients_Bernstein(T,H,n)
     
-    Gammas=np.zeros((n+1,n+1))
-    for i in range(0,n+1):
-        Gammas[:,i]=np.append(Compute_gammas(i,b,L,C),np.zeros(n-i))
+    Gammas=np.zeros((m+1,m+1))
     
-    Times=np.zeros((n+1,1))
     
-    for i in range (0,n+1):
+    for i in range(0,m+1):
+        Gammas[:,i]=np.append(Compute_Gammas_Bernstein(b,T,H,i,Kappa),np.zeros(m-i))
+    
+    Times=np.zeros((m+1,1))
+    
+    for i in range (0,m+1):
         Times[i]=(sy.factorial(i)**(-1))*((T-t)**(i))
         
     S=np.matmul(Gammas,Times)
     
-    return (np.matmul(Kappa,S)[0]**2)*((1/4)*(a/s)**2)
+    if m>n:
+        return (np.matmul(Kappa,S[0:n+1])[0]**2)*((1/4)*(a/s)**2)
+    else:
+        return (np.matmul(Kappa[0,0:m+1],S)[0]**2)*((1/4)*(a/s)**2)
+    
+    
 
 
-def Volterra(X_0,a,b,s,H,U=None,N=999,m=1,T=10,Compare=False,Error=0.5):
+def Volterra(X_0,a,b,s,H,U=None,N=999,m=20,T=10,Compare=False,Error=0.5):
     """
     Generates the Volterra process
     X(t)=X_0+\int_0^t (t-r)^H (a*U(r)-b*X(r))dr+s*\int_0^t (t-r)^H dW(r)
@@ -285,12 +233,13 @@ def Volterra(X_0,a,b,s,H,U=None,N=999,m=1,T=10,Compare=False,Error=0.5):
                      dimensional vector
         N     :      Is the number of steps that the program has to compute, by
                      default it is set to N=999
-        m     :      Is the number of paths to simulate, by default m=1
+        m     :      Order of truncation for the approximated exponent 
         T     :      Is the upper bound of the time interval
         Compare:     Is a boolean parameter that is used to decide whether to compute
                      the path with a=0 in addition to the one with a passed by the user.
         Error:       Is the approximation error allowed when computing the approximant polynomial kernel
                      This is used in computing the optimal advertising effort U
+        Method:      Uses either Legendre or Bernstein Polynomial approximation
         
     Outputs
     --------
@@ -304,7 +253,7 @@ def Volterra(X_0,a,b,s,H,U=None,N=999,m=1,T=10,Compare=False,Error=0.5):
     # Time step size
     dt = T/N
     # Create an empty array to store the realizations.
-    x = np.empty((m,N+1))
+    x = np.empty((1,N+1))
     # Initial values of the Brownian motion.
     x[:, 0] = 0
     #Variance of the brownian motion
@@ -329,39 +278,37 @@ def Volterra(X_0,a,b,s,H,U=None,N=999,m=1,T=10,Compare=False,Error=0.5):
     elif U=='optimal':     #If 'optimal' is passed as an argument, the program computes the optimal vector U 
         U=np.zeros((1,N))
         for i in range(0,N):
-            U[0,i]=OptimalU(a,b,s,H,T,t[i],Error)
+            U[0,i]=OptimalU(a,b,s,H,T,t[i],m,Error)
    
     
     #Initialize some empty vectors used in the for cycles
-    S1=np.zeros((m,N)) 
-    S2=np.zeros((m,N))
-    S3=np.zeros((m,N))
-    P1=np.zeros((m,N))
-    P2=np.zeros((m,N))
-    Noise=np.zeros((m,N))
-    V_a=np.zeros((m,N))
-    V_0=np.zeros((m,N))
+    S1=np.zeros((1,N)) 
+    S2=np.zeros((1,N))
+    S3=np.zeros((1,N))
+    P1=np.zeros((1,N))
+    P2=np.zeros((1,N))
+    Noise=np.zeros((1,N))
+    V_a=np.zeros((1,N))
+    V_0=np.zeros((1,N))
  
     #Compute the noise
-    for k in range(m):
-      for j in range(0,N):
-        for i in range (0,j-1):
-            S1[k,i]=(s*(t[j]-t[i])**H)*(x[k,i+1]-x[k,i])      
-            Noise[k,j]=Noise[k,j]+S1[k,i]
+    for j in range(0,N):
+      for i in range (0,j-1):
+          S1[0,i]=(s*(t[j]-t[i])**H)*(x[0,i+1]-x[0,i])      
+          Noise[0,j]=Noise[0,j]+S1[0,i]
     
     
     if Compare is True:     #Compute the Volterra process both with 'a' and without it (V_a vs V_0)
-        for k in range(m):
-          V_a[k,0]=X_0
-          V_0[k,0]=X_0
-          for j in range(1,N):
-            for i in range(0,j):
-              S2[k,i]=(((t[j]-t[i])**H))*((-b*V_a[k,i]+a*U[0,i])*dt)
-              P1[k,j]=P1[k,j]+S2[k,i]
-              S3[k,i]=(((t[j]-t[i])**H))*((-b*V_0[k,i])*dt)
-              P2[k,j]=P2[k,j]+S3[k,i]
-            V_a[k]=V_a[k,0]+P1[k]+Noise[k]
-            V_0[k]=V_0[k,0]+P2[k]+Noise[k]     
+        V_a[0,0]=X_0
+        V_0[0,0]=X_0
+        for j in range(1,N):
+          for i in range(0,j):
+            S2[0,i]=(((t[j]-t[i])**H))*((-b*V_a[0,i]+a*U[0,i])*dt)
+            P1[0,j]=P1[0,j]+S2[0,i]
+            S3[0,i]=(((t[j]-t[i])**H))*((-b*V_0[0,i])*dt)
+            P2[0,j]=P2[0,j]+S3[0,i]
+          V_a[0]=V_a[0,0]+P1[0]+Noise[0]
+          V_0[0]=V_0[0,0]+P2[0]+Noise[0]     
         
         
         plt.plot(t[0:N],V_a[0,:],label='X(t), a=1')
@@ -373,13 +320,12 @@ def Volterra(X_0,a,b,s,H,U=None,N=999,m=1,T=10,Compare=False,Error=0.5):
         return V_a,V_0,t,U
     
     else:                   #Compute the Volterra process only with 'a' selected by the user
-        for k in range(m):
-          V_a[k,0]=X_0
-          for j in range(1,N):
+        V_a[0,0]=X_0
+        for j in range(1,N):
             for i in range(0,j):
-              S2[k,i]=(((t[j]-t[i])**H))*((-b*V_a[k,i]+a*U[0,i])*dt)
-              P1[k,j]=P1[k,j]+S2[k,i]
-            V_a[k]=V_a[k,0]+P1[k]+Noise[k]
+                S2[0,i]=(((t[j]-t[i])**H))*((-b*V_a[0,i]+a*U[0,i])*dt)
+                P1[0,j]=P1[0,j]+S2[0,i]
+            V_a[0]=V_a[0,0]+P1[0]+Noise[0]
             
         return V_a,t
     
