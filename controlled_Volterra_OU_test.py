@@ -129,11 +129,11 @@ def Monomial_Coefficients_Bernstein(T,H,n):
         for i in range (0,k+1):
             A[0,i]=((-1)**(k-i))*(((i*T)/n)**H)*r8_choose(n,i)*r8_choose(n-i,k-i)
             V[0,k]=V[0,k]+((1/T)**k)*A[0,i]    
-    return V
+    return V[0]
 
 
 
-def Compute_Gammas_Bernstein(b,T,H,m,V):
+def Compute_Gammas_Bernstein(b,T,H,n,V):
     """
     Computes the real numbers "gamma_i^k" needed for computing explicitly the optimal vector U.
     
@@ -143,28 +143,28 @@ def Compute_Gammas_Bernstein(b,T,H,m,V):
     b : Drift in the Volterra process.
     T : Time horizon
     H : Hurst index
+    V : vector of monomial coefficients
 
     Returns
     -------
     Gamma : Elements in the optimal vector U.
     """
     
-    if m == 0:
+    if n == 0:
         Gamma=np.array([1])
         
     else:
+        G=Compute_Gammas_Bernstein(b,T,H,n-1,V)
         S=0
-        G=Compute_Gammas_Bernstein(b,T,H,m-1,V)
-        
-        for i in range(min(len(G)-1,len(V[0])-1)+1):
-            S=S+(-b)*G[i]*sy.factorial(i)*V[0,i]
+        for j in range(min(len(G),len(V))):
+            S=S+(-b)*G[j]*sy.factorial(j)*V[j]
             
         Gamma=np.append(S,G)
         
         
     return Gamma
 
-def OptimalU(a,b,s,H,T,t,m,Error=0.5):
+def OptimalU(a,b,s,H,T,t,m,n):
     """
     Computes the optimal advertising effort U at point t\in[0,T]. In order to do so we start by 
     computing the optimal advertising effort for an approximated problem with kernel K_e given
@@ -185,35 +185,37 @@ def OptimalU(a,b,s,H,T,t,m,Error=0.5):
     """
     
 
-    n=1
+    # n=1
     
-    while approximated_hurst_bernstein(T,H,n)>Error:         # Finding an optimal number of Legendre poly that allows to get below the approximation error choosen by the user
-        n=n+1
+    # while approximated_hurst_bernstein(T,H,n)>Error:         # Finding an optimal number of Legendre poly that allows to get below the approximation error choosen by the user
+    #     n=n+1
     
-    Kappa=Monomial_Coefficients_Bernstein(T,H,n)
+    Kappa=Monomial_Coefficients_Bernstein(T,H,n)    
     
     Gammas=np.zeros((m+1,m+1))
-    
+    Factorial=np.zeros(len(Kappa)) 
+    coefficients=np.zeros(m+1)
+    U=0
     
     for i in range(0,m+1):
         Gammas[:,i]=np.append(Compute_Gammas_Bernstein(b,T,H,i,Kappa),np.zeros(m-i))
     
-    Times=np.zeros((m+1,1))
+    for i in range(len(Factorial)):
+        Factorial[i]=sy.factorial(i)*Kappa[i]
     
-    for i in range (0,m+1):
-        Times[i]=(sy.factorial(i)**(-1))*((T-t)**(i))
+    for k in range(1,m):
+        coefficients[k]=sum(np.multiply(Gammas[:min(n+1,k+1),k],Factorial[:min(n+1,k+1)]))/sy.factorial(k)
+
+    
+    for k in range(len(coefficients)):
+        U=U+coefficients[k]*(T-t)**k
         
-    S=np.matmul(Gammas,Times)
-    
-    if m>n:
-        return (np.matmul(Kappa,S[0:n+1])[0]**2)*(a/2)
-    else:
-        return (np.matmul(Kappa[0,0:m+1],S)[0])*((1/2)*(a))
-    
-    
+    return U*(a/2)
+
+  
 
 
-def Volterra(X_0,a,b,s,H,U=None,N=999,m=20,T=10,Compare=False,Error=0.5):
+def Volterra(X_0,a,b,s,H,U=None,N=999,m=20,T=10,Compare=False,n=5):
     """
     Generates the Volterra process
     X(t)=X_0+\int_0^t (t-r)^H (a*U(r)-b*X(r))dr+s*\int_0^t (t-r)^H dW(r)
@@ -278,7 +280,7 @@ def Volterra(X_0,a,b,s,H,U=None,N=999,m=20,T=10,Compare=False,Error=0.5):
     elif U=='optimal':     #If 'optimal' is passed as an argument, the program computes the optimal vector U 
         U=np.zeros((1,N))
         for i in range(0,N):
-            U[0,i]=OptimalU(a,b,s,H,T,t[i],m,Error)
+            U[0,i]=OptimalU(a,b,s,H,T,t[i],m,n)
    
     
     #Initialize some empty vectors used in the for cycles
@@ -311,12 +313,12 @@ def Volterra(X_0,a,b,s,H,U=None,N=999,m=20,T=10,Compare=False,Error=0.5):
           V_0[0]=V_0[0,0]+P2[0]+Noise[0]     
         
         
-        # plt.plot(t[0:N],V_a[0,:],label='X(t), alpha=1')
-        # plt.plot(t[0:N],V_0[0,:],label='X(t), alpha=0')
-        # plt.plot(t[0:N],U[0,:],label='u(t)')
-        # plt.legend(loc="upper right")
-        # plt.show()
-        # plt.savefig('Volterra.png', dpi=300)
+        plt.plot(t[0:N],V_a[0,:],label='X(t), alpha=1')
+        plt.plot(t[0:N],V_0[0,:],label='X(t), alpha=0')
+        plt.plot(t[0:N],U[0,:],label='u(t)')
+        plt.legend(loc="upper right")
+        plt.show()
+        plt.savefig('Volterra.png', dpi=300)
                 
         return V_a,V_0,t,U
     
